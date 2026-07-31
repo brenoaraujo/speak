@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { MistakeCard } from '@/components/mistake-card';
+import { PlayButton } from '@/components/play-button';
 import { ScoreRing } from '@/components/score-ring';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -47,10 +48,12 @@ export function ResultView({
 
       <Section title="Natural version">
         <ThemedText style={styles.body}>{correctedText}</ThemedText>
+        <PlayButton text={correctedText} />
       </Section>
 
       <Section title="Another way to say it">
         <ThemedText style={styles.body}>{alternativeText}</ThemedText>
+        <PlayButton text={alternativeText} />
       </Section>
 
       <Section title={mistakes.length ? `Mistakes (${mistakes.length})` : 'Mistakes'}>

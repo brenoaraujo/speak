@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { MicButton } from '@/components/mic-button';
 import { PhraseResultView } from '@/components/phrase-result-view';
 import { ResultView } from '@/components/result-view';
 import { ThemedText } from '@/components/themed-text';
@@ -24,12 +25,12 @@ type Mode = 'fix' | 'say';
 
 const COPY: Record<Mode, { intro: string; placeholder: string; action: string }> = {
   fix: {
-    intro: 'Type something you want to say. I will fix it and show a natural version.',
+    intro: 'Speak or type something you want to say. I will fix it and show a natural version.',
     placeholder: 'For example: Yesterday I go to the party and I very tired.',
     action: 'Check it',
   },
   say: {
-    intro: 'Tell me what you want to say. I will give you the best way to say it, plus tips.',
+    intro: 'Speak or type what you want to say. I will give you the best way to say it, plus tips.',
     placeholder:
       "For example: how can I ask my son's friend's mother if they can have a playdate tomorrow?",
     action: 'Say it',
@@ -99,6 +100,14 @@ export default function CoachScreen() {
             </View>
 
             <ThemedText style={{ color: theme.textSecondary }}>{copy.intro}</ThemedText>
+
+            <MicButton
+              onTranscribed={(t) =>
+                setText((prev) => (prev.trim() ? `${prev.trim()} ${t}` : t))
+              }
+              onError={setError}
+              disabled={busy}
+            />
 
             <TextInput
               style={[

@@ -3,6 +3,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { PlayButton } from '@/components/play-button';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -29,7 +30,10 @@ export function PhraseResultView({ phrase, showIntent }: Props) {
       <Section title="Say this">
         <View style={[styles.bestCard, { backgroundColor: theme.backgroundElement }]}>
           <ThemedText style={styles.best}>{phrase.best}</ThemedText>
-          <CopyButton text={phrase.best} />
+          <View style={styles.actionRow}>
+            <PlayButton text={phrase.best} />
+            <CopyButton text={phrase.best} />
+          </View>
         </View>
         {phrase.note ? (
           <ThemedText style={[styles.note, { color: theme.textSecondary }]}>
@@ -47,7 +51,10 @@ export function PhraseResultView({ phrase, showIntent }: Props) {
                   <ThemedText type="small" style={{ color: theme.tint, fontWeight: '700' }}>
                     {alt.tone}
                   </ThemedText>
-                  <CopyButton text={alt.text} />
+                  <View style={styles.actionRow}>
+                    <PlayButton text={alt.text} />
+                    <CopyButton text={alt.text} />
+                  </View>
                 </View>
                 <ThemedText style={styles.altText}>{alt.text}</ThemedText>
               </View>
@@ -140,6 +147,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
   altText: { fontSize: 17, lineHeight: 24 },
   copyButton: {
     flexDirection: 'row',

@@ -24,6 +24,31 @@ export async function analyzeText(
   return data;
 }
 
+// --- Voice: speech to text and text to speech ---
+
+// Send a recorded clip (base64) to Whisper and get the transcription back.
+export async function transcribeAudio(audioBase64: string, mime: string): Promise<string> {
+  const { data, error } = await supabase.functions.invoke<{ text: string }>('transcribe', {
+    body: { audio: audioBase64, mime },
+  });
+  if (error) throw error;
+  if (!data) throw new Error('No transcription returned');
+  return data.text ?? '';
+}
+
+// Ask the `speak` function to read a sentence aloud; returns base64 mp3.
+export async function synthesizeSpeech(
+  text: string,
+): Promise<{ audio: string; mime: string }> {
+  const { data, error } = await supabase.functions.invoke<{ audio: string; mime: string }>(
+    'speak',
+    { body: { text } },
+  );
+  if (error) throw error;
+  if (!data) throw new Error('No audio returned');
+  return data;
+}
+
 // --- "How can I say" ---
 
 // Describe what you want to say; get back the best natural sentence plus tone
