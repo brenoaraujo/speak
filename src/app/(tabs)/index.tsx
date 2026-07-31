@@ -11,30 +11,60 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PhraseResultView } from '@/components/phrase-result-view';
 import { ResultView } from '@/components/result-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { analyzeText } from '@/lib/api';
-import type { AnalyzeResponse } from '@/lib/types';
+import { analyzeText, sayPhrase } from '@/lib/api';
+import type { AnalyzeResponse, Phrase } from '@/lib/types';
+
+type Mode = 'fix' | 'say';
+
+const COPY: Record<Mode, { intro: string; placeholder: string; action: string }> = {
+  fix: {
+    intro: 'Type something you want to say. I will fix it and show a natural version.',
+    placeholder: 'For example: Yesterday I go to the party and I very tired.',
+    action: 'Check it',
+  },
+  say: {
+    intro: 'Tell me what you want to say. I will give you the best way to say it, plus tips.',
+    placeholder:
+      "For example: how can I ask my son's friend's mother if they can have a playdate tomorrow?",
+    action: 'Say it',
+  },
+};
 
 export default function CoachScreen() {
   const theme = useTheme();
+  const [mode, setMode] = useState<Mode>('fix');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
+  const [phrase, setPhrase] = useState<Phrase | null>(null);
+
+  const switchMode = (next: Mode) => {
+    if (next === mode) return;
+    setMode(next);
+    setResult(null);
+    setPhrase(null);
+    setError(null);
+  };
 
   const submit = async () => {
     if (!text.trim()) return;
     setError(null);
     setBusy(true);
     try {
-      const res = await analyzeText(text.trim());
-      setResult(res);
+      if (mode === 'fix') {
+        setResult(await analyzeText(text.trim()));
+      } else {
+        setPhrase(await sayPhrase(text.trim()));
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not analyze that. Try again.');
+      setError(e instanceof Error ? e.message : 'Something went wrong. Try again.');
     } finally {
       setBusy(false);
     }
@@ -42,9 +72,13 @@ export default function CoachScreen() {
 
   const reset = () => {
     setResult(null);
+    setPhrase(null);
     setText('');
     setError(null);
   };
+
+  const copy = COPY[mode];
+  const hasResult = mode === 'fix' ? result != null : phrase != null;
 
   return (
     <ThemedView style={styles.container}>
@@ -58,9 +92,13 @@ export default function CoachScreen() {
             <ThemedText type="title" style={styles.title}>
               Coach
             </ThemedText>
-            <ThemedText style={{ color: theme.textSecondary }}>
-              Type something you want to say. I will fix it and show a natural version.
-            </ThemedText>
+
+            <View style={[styles.toggle, { backgroundColor: theme.backgroundElement }]}>
+              <SegItem label="Fix it" active={mode === 'fix'} onPress={() => switchMode('fix')} />
+              <SegItem label="Say it" active={mode === 'say'} onPress={() => switchMode('say')} />
+            </View>
+
+            <ThemedText style={{ color: theme.textSecondary }}>{copy.intro}</ThemedText>
 
             <TextInput
               style={[
@@ -71,7 +109,7 @@ export default function CoachScreen() {
                   borderColor: theme.border,
                 },
               ]}
-              placeholder="For example: Yesterday I go to the party and I very tired."
+              placeholder={copy.placeholder}
               placeholderTextColor={theme.textSecondary}
               multiline
               value={text}
@@ -89,10 +127,10 @@ export default function CoachScreen() {
                 {busy ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <ThemedText style={styles.buttonText}>Check it</ThemedText>
+                  <ThemedText style={styles.buttonText}>{copy.action}</ThemedText>
                 )}
               </Pressable>
-              {result && (
+              {hasResult && (
                 <Pressable
                   style={[styles.secondaryButton, { borderColor: theme.border }]}
                   onPress={reset}>
@@ -101,7 +139,7 @@ export default function CoachScreen() {
               )}
             </View>
 
-            {result && (
+            {mode === 'fix' && result && (
               <View style={styles.result}>
                 <ResultView
                   correctedText={result.entry.corrected_text}
@@ -112,10 +150,41 @@ export default function CoachScreen() {
                 />
               </View>
             )}
+
+            {mode === 'say' && phrase && (
+              <View style={styles.result}>
+                <PhraseResultView phrase={phrase} />
+              </View>
+            )}
           </ScrollView>
         </SafeAreaView>
       </KeyboardAvoidingView>
     </ThemedView>
+  );
+}
+
+function SegItem({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.segItem, active && { backgroundColor: theme.background }]}>
+      <ThemedText
+        style={{
+          fontWeight: '600',
+          color: active ? theme.text : theme.textSecondary,
+        }}>
+        {label}
+      </ThemedText>
+    </Pressable>
   );
 }
 
@@ -130,6 +199,17 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   title: { fontSize: 40, lineHeight: 44 },
+  toggle: {
+    flexDirection: 'row',
+    borderRadius: Spacing.three,
+    padding: Spacing.half,
+  },
+  segItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.two,
+    borderRadius: Spacing.three - Spacing.half,
+  },
   input: {
     minHeight: 120,
     borderWidth: 1,

@@ -5,7 +5,9 @@ import type {
   CategoryStat,
   Entry,
   Mistake,
+  Phrase,
   PracticeItem,
+  SayResponse,
 } from './types';
 
 // Send text to the `analyze` function. The user's session token is attached
@@ -20,6 +22,40 @@ export async function analyzeText(
   if (error) throw error;
   if (!data) throw new Error('No response from analyze');
   return data;
+}
+
+// --- "How can I say" ---
+
+// Describe what you want to say; get back the best natural sentence plus tone
+// variations and tips. The result is saved so it shows up in History.
+export async function sayPhrase(intent: string): Promise<Phrase> {
+  const { data, error } = await supabase.functions.invoke<SayResponse>('phrase', {
+    body: { intent },
+  });
+  if (error) throw error;
+  if (!data) throw new Error('No response from phrase');
+  return data.phrase;
+}
+
+// Saved phrases, newest first.
+export async function fetchPhrases(): Promise<Phrase[]> {
+  const { data, error } = await supabase
+    .from('phrases')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data as Phrase[]) ?? [];
+}
+
+// A single saved phrase, for the detail screen.
+export async function fetchPhrase(phraseId: string): Promise<Phrase> {
+  const { data, error } = await supabase
+    .from('phrases')
+    .select('*')
+    .eq('id', phraseId)
+    .single();
+  if (error) throw error;
+  return data as Phrase;
 }
 
 // History list, newest first.

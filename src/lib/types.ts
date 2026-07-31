@@ -65,6 +65,30 @@ export type AnalyzeResponse = {
   mistakes: Mistake[];
 };
 
+// --- "How can I say" feature ---
+
+// One tone variation of a suggested phrase, e.g. { tone: 'More polite', text: '...' }.
+export type PhraseAlternative = {
+  text: string;
+  tone: string;
+};
+
+export type Phrase = {
+  id: string;
+  user_id: string;
+  intent: string; // what the user wanted to say
+  best: string; // the recommended sentence
+  alternatives: PhraseAlternative[];
+  tips: string[];
+  note: string | null;
+  created_at: string;
+};
+
+// What the `phrase` Edge Function returns.
+export type SayResponse = {
+  phrase: Phrase;
+};
+
 export type PracticeKind = 'flashcard' | 'multiple_choice';
 export type PracticeStatus = 'new' | 'learning' | 'mastered';
 

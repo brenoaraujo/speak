@@ -36,6 +36,10 @@ function RootNavigator() {
         name="entry/[id]"
         options={{ headerShown: true, title: 'Entry', presentation: 'card' }}
       />
+      <Stack.Screen
+        name="phrase/[id]"
+        options={{ headerShown: true, title: 'Phrase', presentation: 'card' }}
+      />
     </Stack>
   );
 }
