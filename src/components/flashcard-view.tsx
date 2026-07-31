@@ -19,7 +19,7 @@ export function FlashcardView({
 
   return (
     <View style={styles.container}>
-      <CategoryChip category={item.category} />
+      <ChipRow item={item} />
 
       <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
         <ThemedText style={styles.front}>{item.front}</ThemedText>
@@ -29,6 +29,7 @@ export function FlashcardView({
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
             <ThemedText style={[styles.answer, { color: theme.success }]}>{item.back}</ThemedText>
             <ThemedText style={{ color: theme.textSecondary }}>{item.explanation}</ThemedText>
+            <ReinforcesLine item={item} />
           </View>
         )}
       </View>
@@ -68,6 +69,35 @@ export function CategoryChip({ category }: { category: PracticeItem['category'] 
   );
 }
 
+// The category, plus the everyday situation this item is set in. Together they
+// make the "same lesson, new context" idea visible at a glance.
+export function ChipRow({ item }: { item: PracticeItem }) {
+  const theme = useTheme();
+  return (
+    <View style={chip.row}>
+      <CategoryChip category={item.category} />
+      {item.context ? (
+        <View style={[chip.chip, { backgroundColor: theme.backgroundSelected }]}>
+          <ThemedText type="small" style={{ color: theme.tint }}>
+            {item.context}
+          </ThemedText>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+// Names the underlying mistake this item reinforces, so repeated patterns click.
+export function ReinforcesLine({ item }: { item: PracticeItem }) {
+  const theme = useTheme();
+  if (!item.based_on) return null;
+  return (
+    <ThemedText type="small" style={{ color: theme.textSecondary }}>
+      Reinforces: {item.based_on}
+    </ThemedText>
+  );
+}
+
 const chip = StyleSheet.create({
   chip: {
     alignSelf: 'flex-start',
@@ -75,6 +105,7 @@ const chip = StyleSheet.create({
     paddingVertical: Spacing.half,
     borderRadius: 999,
   },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
 });
 
 const styles = StyleSheet.create({

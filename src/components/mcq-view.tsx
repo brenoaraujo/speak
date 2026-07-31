@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { CategoryChip } from '@/components/flashcard-view';
+import { ChipRow, ReinforcesLine } from '@/components/flashcard-view';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -29,7 +29,7 @@ export function McqView({
 
   return (
     <View style={styles.container}>
-      <CategoryChip category={item.category} />
+      <ChipRow item={item} />
       <ThemedText style={styles.question}>{item.front}</ThemedText>
 
       <View style={{ gap: Spacing.two }}>
@@ -61,6 +61,7 @@ export function McqView({
             {wasCorrect ? 'Correct' : 'Not quite'}
           </ThemedText>
           <ThemedText style={{ color: theme.textSecondary }}>{item.explanation}</ThemedText>
+          <ReinforcesLine item={item} />
         </View>
       )}
 

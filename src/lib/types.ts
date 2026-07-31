@@ -97,6 +97,8 @@ export type PracticeItem = {
   user_id: string;
   category: CategorySlug;
   kind: PracticeKind;
+  context: string | null; // everyday situation the item is set in
+  based_on: string | null; // the mistake/rule this item reinforces
   front: string;
   back: string;
   options: string[];

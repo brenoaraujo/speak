@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
     const userId = userData.user.id;
 
     const body = await req.json().catch(() => ({}));
-    const count = Math.max(4, Math.min(12, Number(body.count) || 8));
+    const count = Math.max(6, Math.min(15, Number(body.count) || 12));
 
     // Pull the learner's weak categories and a few recent example mistakes.
     const [{ data: stats }, { data: mistakes }] = await Promise.all([
@@ -71,12 +71,12 @@ Deno.serve(async (req) => {
 Recent real mistakes they made:
 ${exampleList}
 
-Generate about ${count} practice items targeting these weaknesses. Mix flashcards and multiple_choice.`;
+Generate about ${count} practice items. Group them into clusters of about 3 that each drill one of these weak patterns: one item close to their real mistake, then more of the same rule in different everyday contexts. Mix flashcards and multiple_choice.`;
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
     const message = await anthropic.messages.create({
       model: "claude-opus-4-8",
-      max_tokens: 3500,
+      max_tokens: 5000,
       system: PRACTICE_SYSTEM_PROMPT,
       output_config: { format: { type: "json_schema", schema: PRACTICE_SCHEMA } },
       messages: [{ role: "user", content: userPrompt }],
@@ -92,6 +92,8 @@ Generate about ${count} practice items targeting these weaknesses. Mix flashcard
       user_id: userId,
       category: it.category,
       kind: it.kind,
+      context: it.context ?? null,
+      based_on: it.based_on ? stripDashPunctuation(it.based_on) : null,
       front: stripDashPunctuation(it.front),
       back: stripDashPunctuation(it.back),
       options: (it.options ?? []).map(stripDashPunctuation),

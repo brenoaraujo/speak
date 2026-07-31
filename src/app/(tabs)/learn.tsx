@@ -52,7 +52,7 @@ export default function LearnScreen() {
     setError(null);
     setGenerating(true);
     try {
-      await generatePractice(8);
+      await generatePractice(12);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not generate practice. Try again.');
@@ -63,9 +63,22 @@ export default function LearnScreen() {
 
   const startSession = () => {
     const pool = items.filter((i) => i.status !== 'mastered');
-    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, SESSION_SIZE);
-    if (shuffled.length === 0) return;
-    setQueue(shuffled);
+    // Group by the pattern each card reinforces so a cluster's variations stay
+    // together. You practice the same rule across contexts back-to-back, then
+    // shuffle which pattern comes first so sessions still feel fresh.
+    const clusters = new Map<string, PracticeItem[]>();
+    for (const item of pool) {
+      const key = item.based_on ?? item.id; // ungrouped cards are their own cluster
+      const bucket = clusters.get(key);
+      if (bucket) bucket.push(item);
+      else clusters.set(key, [item]);
+    }
+    const ordered = [...clusters.values()]
+      .sort(() => Math.random() - 0.5)
+      .flat()
+      .slice(0, SESSION_SIZE);
+    if (ordered.length === 0) return;
+    setQueue(ordered);
     setIndex(0);
     setCorrect(0);
     setMode('session');
@@ -144,7 +157,8 @@ export default function LearnScreen() {
             Learn
           </ThemedText>
           <ThemedText style={{ color: theme.textSecondary }}>
-            Practice built from the mistakes you actually make.
+            Practice built from the mistakes you actually make, then the same lessons in new
+            everyday situations so they stick.
           </ThemedText>
 
           {/* Deck status */}
@@ -159,7 +173,8 @@ export default function LearnScreen() {
           {counts.total === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: theme.backgroundElement }]}>
               <ThemedText style={{ fontSize: 16 }}>
-                No cards yet. Generate a practice set based on your recent mistakes to get started.
+                No cards yet. Generate a practice set and I will turn your recent mistakes into
+                small clusters, each drilling one pattern across different everyday situations.
               </ThemedText>
             </View>
           ) : (
@@ -191,7 +206,8 @@ export default function LearnScreen() {
 
           {generating && (
             <ThemedText type="small" style={{ color: theme.textSecondary, textAlign: 'center' }}>
-              Building cards from your weak spots. This takes a few seconds.
+              Building clusters from your weak spots, same lesson in new contexts. This takes a few
+              seconds.
             </ThemedText>
           )}
         </ScrollView>
