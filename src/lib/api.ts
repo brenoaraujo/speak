@@ -4,11 +4,17 @@ import type {
   AnalyzeResponse,
   CategoryStat,
   Entry,
+  GradeResult,
   Mistake,
   Phrase,
   PracticeItem,
+  ProduceResponse,
+  ReviewCard,
   SayResponse,
+  Scenario,
 } from './types';
+import { computeSchedule, type Schedule } from './srs';
+import type { ReviewRating } from './types';
 
 // Send text to the `analyze` function. The user's session token is attached
 // automatically by supabase.functions.invoke, so the function knows who it is.
@@ -21,6 +27,104 @@ export async function analyzeText(
   });
   if (error) throw error;
   if (!data) throw new Error('No response from analyze');
+  return data;
+}
+
+// --- Feature 1: Spaced repetition review ---
+
+// How many cards are due right now (for the "due today" badge).
+export async function countDueReviewCards(): Promise<number> {
+  const { count, error } = await supabase
+    .from('review_cards')
+    .select('id', { count: 'exact', head: true })
+    .lte('next_review_at', new Date().toISOString());
+  if (error) throw error;
+  return count ?? 0;
+}
+
+// Due cards, weakest categories first so a short session hits what matters most.
+export async function fetchDueReviewCards(limit = 20): Promise<ReviewCard[]> {
+  const now = new Date().toISOString();
+  const [{ data: due, error }, stats] = await Promise.all([
+    supabase
+      .from('review_cards')
+      .select('*')
+      .lte('next_review_at', now)
+      .order('next_review_at', { ascending: true }),
+    fetchCategoryStats().catch(() => [] as CategoryStat[]),
+  ]);
+  if (error) throw error;
+  const cards = (due as ReviewCard[]) ?? [];
+
+  // Rank categories by how often the user gets them wrong (most first).
+  const weakRank = new Map<string, number>();
+  stats.forEach((s, i) => weakRank.set(s.category, i));
+  const rankOf = (c: ReviewCard) => weakRank.get(c.category) ?? Number.MAX_SAFE_INTEGER;
+
+  return [...cards].sort((a, b) => rankOf(a) - rankOf(b)).slice(0, limit);
+}
+
+// Ask Claude whether the learner's answer fixes the mistake (many fixes valid).
+export async function gradeReview(card: ReviewCard, answer: string): Promise<GradeResult> {
+  const { data, error } = await supabase.functions.invoke<GradeResult>('grade-review', {
+    body: {
+      original_text: card.original_text,
+      original_snippet: card.original_snippet,
+      correction: card.correction,
+      answer,
+    },
+  });
+  if (error) throw error;
+  if (!data) throw new Error('No grade returned');
+  return data;
+}
+
+// Apply an SM-2 result to a card and persist the new schedule.
+export async function applyReviewResult(
+  card: ReviewCard,
+  rating: ReviewRating,
+): Promise<Schedule> {
+  const schedule = computeSchedule(card, rating);
+  const { error } = await supabase.from('review_cards').update(schedule).eq('id', card.id);
+  if (error) throw error;
+  return schedule;
+}
+
+// --- Feature 2: Production practice ---
+
+export async function fetchScenarios(): Promise<Scenario[]> {
+  const { data, error } = await supabase.from('scenarios').select('*');
+  if (error) throw error;
+  return (data as Scenario[]) ?? [];
+}
+
+// Pick a scenario, biased toward the user's weak categories when we know them.
+export async function pickScenario(): Promise<Scenario | null> {
+  const [scenarios, stats] = await Promise.all([
+    fetchScenarios(),
+    fetchCategoryStats().catch(() => [] as CategoryStat[]),
+  ]);
+  if (scenarios.length === 0) return null;
+
+  const weak = new Set(stats.slice(0, 4).map((s) => s.category));
+  const targeted = weak.size
+    ? scenarios.filter((s) => s.target_categories.some((c) => weak.has(c)))
+    : [];
+  const pool = targeted.length ? targeted : scenarios;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// Grade a cold response to a scenario; feeds mistakes into the review deck.
+export async function produceResponse(
+  scenarioId: string,
+  text: string,
+  source: 'text' | 'audio' = 'text',
+): Promise<ProduceResponse> {
+  const { data, error } = await supabase.functions.invoke<ProduceResponse>('produce', {
+    body: { scenario_id: scenarioId, text, source },
+  });
+  if (error) throw error;
+  if (!data) throw new Error('No response from produce');
   return data;
 }
 

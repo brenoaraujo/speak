@@ -45,6 +45,8 @@ export type Entry = {
   audio_path: string | null;
   score: number | null;
   assessment: string | null;
+  scenario_id: string | null; // set when this entry came from production practice
+  coverage: string | null; // Claude's note on whether the scenario was addressed
   created_at: string;
 };
 
@@ -107,6 +109,56 @@ export type PracticeItem = {
   times_seen: number;
   times_correct: number;
   created_at: string;
+};
+
+// --- Feature 1: Spaced repetition review cards ---
+
+export type ReviewSource = 'correction' | 'production_practice';
+
+// How the learner (or Claude) rated a review attempt.
+export type ReviewRating = 'failed' | 'hard' | 'easy';
+
+export type ReviewCard = {
+  id: string;
+  user_id: string;
+  mistake_id: string | null;
+  category: CategorySlug;
+  source: ReviewSource;
+  original_text: string;
+  original_snippet: string;
+  correction: string;
+  explanation: string;
+  last_reviewed_at: string | null;
+  next_review_at: string;
+  interval: number;
+  ease_factor: number;
+  review_count: number;
+  created_at: string;
+};
+
+// What the `grade-review` function returns.
+export type GradeResult = {
+  correct: boolean;
+  feedback: string;
+};
+
+// --- Feature 2: Production practice ---
+
+export type ScenarioDifficulty = 'basic' | 'everyday' | 'professional';
+
+export type Scenario = {
+  id: string;
+  prompt_text: string;
+  target_categories: CategorySlug[];
+  difficulty: ScenarioDifficulty;
+  created_at: string;
+};
+
+// What the `produce` function returns: the usual analysis plus a coverage note.
+export type ProduceResponse = {
+  entry: Entry;
+  mistakes: Mistake[];
+  coverage: string;
 };
 
 // One row of the `category_stats` view.

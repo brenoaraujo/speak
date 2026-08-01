@@ -1,18 +1,16 @@
-// Edge Function: analyze
-// Takes a piece of text, asks Claude to coach it, saves the entry + mistakes to
-// Postgres (as the calling user, so RLS applies), and returns the result.
-//
-// Secrets (set with `supabase secrets set`):
-//   ANTHROPIC_API_KEY   your Claude API key
-// Supabase injects SUPABASE_URL and SUPABASE_ANON_KEY automatically.
+// Edge Function: produce
+// Production practice. The user answered a scenario cold (spoken or typed). We
+// run their response through the same correction pipeline as `analyze`, plus a
+// note on whether they addressed the scenario, save the entry + mistakes, and
+// feed every mistake into the spaced-repetition deck tagged production_practice.
 
 import Anthropic from "npm:@anthropic-ai/sdk@0.68.0";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
-  type AnalysisResult,
-  OUTPUT_SCHEMA,
-  SYSTEM_PROMPT,
-} from "../_shared/prompt.ts";
+  PRODUCE_SCHEMA,
+  PRODUCE_SYSTEM_PROMPT,
+  type ProduceResult,
+} from "../_shared/produce_prompt.ts";
 import { buildReviewRows } from "../_shared/review.ts";
 
 const corsHeaders = {
@@ -21,71 +19,70 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// Belt-and-suspenders: strip dashes-as-punctuation in case any slip through.
-// Leaves hyphens inside real compound words (letter-hyphen-letter) alone.
 function stripDashPunctuation(text: string): string {
-  return text
-    .replace(/\s*—\s*/g, ", ") // em dash
-    .replace(/\s+-\s+/g, ", ");      // " - " used as a pause
+  return text.replace(/\s*—\s*/g, ", ").replace(/\s+-\s+/g, ", ");
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return json({ error: "Missing Authorization header" }, 401);
-    }
+    if (!authHeader) return json({ error: "Missing Authorization header" }, 401);
 
-    // A Supabase client bound to the caller's JWT, so inserts run as that user
-    // and Row Level Security is enforced.
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } },
     );
-
     const { data: userData, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !userData.user) {
-      return json({ error: "Invalid or expired session" }, 401);
-    }
+    if (userErr || !userData.user) return json({ error: "Invalid or expired session" }, 401);
     const userId = userData.user.id;
 
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const text: string = (body.text ?? "").trim();
+    const scenarioId: string | null = body.scenario_id ?? null;
     const source: "text" | "audio" = body.source === "audio" ? "audio" : "text";
-    const audioPath: string | null = body.audio_path ?? null;
+    if (!text) return json({ error: "No response provided" }, 400);
 
-    if (!text) {
-      return json({ error: "No text provided" }, 400);
+    // Look up the scenario so grading can judge whether it was addressed.
+    let scenarioPrompt = "";
+    if (scenarioId) {
+      const { data: scenario } = await supabase
+        .from("scenarios")
+        .select("prompt_text")
+        .eq("id", scenarioId)
+        .single();
+      scenarioPrompt = scenario?.prompt_text ?? "";
     }
 
-    // --- Ask Claude, with a schema-constrained response ---
+    const userPrompt = `Scenario the learner was asked to respond to:
+"${scenarioPrompt || "(none provided)"}"
+
+Their response:
+"${text}"`;
+
     const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
     const message = await anthropic.messages.create({
       model: "claude-opus-4-8",
       max_tokens: 2048,
-      system: SYSTEM_PROMPT,
-      output_config: { format: { type: "json_schema", schema: OUTPUT_SCHEMA } },
-      messages: [{ role: "user", content: text }],
+      system: PRODUCE_SYSTEM_PROMPT,
+      output_config: { format: { type: "json_schema", schema: PRODUCE_SCHEMA } },
+      messages: [{ role: "user", content: userPrompt }],
     });
 
     const textBlock = message.content.find((b) => b.type === "text");
     if (!textBlock || textBlock.type !== "text") {
       return json({ error: "No analysis returned" }, 502);
     }
-    const analysis = JSON.parse(textBlock.text) as AnalysisResult;
+    const analysis = JSON.parse(textBlock.text) as ProduceResult;
 
     const correctedText = stripDashPunctuation(analysis.corrected_text);
     const alternativeText = stripDashPunctuation(analysis.alternative_text);
     const assessment = stripDashPunctuation(analysis.assessment ?? "");
-    // Clamp the score into 0..100 in case the model returns something odd.
+    const coverage = stripDashPunctuation(analysis.coverage ?? "");
     const score = Math.max(0, Math.min(100, Math.round(analysis.score ?? 0)));
 
-    // --- Persist: entry first, then its mistakes ---
     const { data: entry, error: entryErr } = await supabase
       .from("entries")
       .insert({
@@ -94,9 +91,10 @@ Deno.serve(async (req) => {
         original_text: text,
         corrected_text: correctedText,
         alternative_text: alternativeText,
-        audio_path: audioPath,
         score,
         assessment,
+        scenario_id: scenarioId,
+        coverage,
       })
       .select()
       .single();
@@ -118,12 +116,11 @@ Deno.serve(async (req) => {
         .select("id,category,original_snippet,correction,explanation");
       if (mErr) return json({ error: mErr.message }, 500);
 
-      // Each mistake becomes a spaced-repetition review card, due tomorrow.
       const reviewRows = buildReviewRows({
         userId,
         entryOriginalText: text,
         mistakes: insertedMistakes ?? [],
-        source: "correction",
+        source: "production_practice",
       });
       if (reviewRows.length > 0) {
         const { error: rErr } = await supabase.from("review_cards").insert(reviewRows);
@@ -132,12 +129,9 @@ Deno.serve(async (req) => {
     }
 
     return json({
-      entry: {
-        ...entry,
-        corrected_text: correctedText,
-        alternative_text: alternativeText,
-      },
+      entry: { ...entry, corrected_text: correctedText, alternative_text: alternativeText },
       mistakes: analysis.mistakes,
+      coverage,
     });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : "Unknown error" }, 500);

@@ -5,32 +5,50 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FlashcardView } from '@/components/flashcard-view';
 import { McqView } from '@/components/mcq-view';
+import { ProductionPractice } from '@/components/production-practice';
+import { ReviewSession } from '@/components/review-session';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { fetchPracticeItems, generatePractice, recordPracticeResult } from '@/lib/api';
-import type { PracticeItem } from '@/lib/types';
+import {
+  countDueReviewCards,
+  fetchDueReviewCards,
+  fetchPracticeItems,
+  generatePractice,
+  recordPracticeResult,
+} from '@/lib/api';
+import type { PracticeItem, ReviewCard } from '@/lib/types';
 
-type Mode = 'overview' | 'session' | 'summary';
+type Mode = 'overview' | 'review' | 'produce' | 'session' | 'summary';
 
 const SESSION_SIZE = 10;
 
 export default function LearnScreen() {
   const theme = useTheme();
   const [items, setItems] = useState<PracticeItem[]>([]);
+  const [dueCount, setDueCount] = useState(0);
   const [mode, setMode] = useState<Mode>('overview');
   const [generating, setGenerating] = useState(false);
+  const [loadingReview, setLoadingReview] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Session state
+  // Review session state
+  const [reviewCards, setReviewCards] = useState<ReviewCard[]>([]);
+
+  // Practice-set session state
   const [queue, setQueue] = useState<PracticeItem[]>([]);
   const [index, setIndex] = useState(0);
   const [correct, setCorrect] = useState(0);
 
   const load = useCallback(async () => {
     try {
-      setItems(await fetchPracticeItems());
+      const [practice, due] = await Promise.all([
+        fetchPracticeItems(),
+        countDueReviewCards().catch(() => 0),
+      ]);
+      setItems(practice);
+      setDueCount(due);
     } catch {
       // ignore; retry on next focus
     }
@@ -42,6 +60,51 @@ export default function LearnScreen() {
     }, [load, mode]),
   );
 
+  const backToOverview = () => {
+    setMode('overview');
+    load();
+  };
+
+  // ---------- REVIEW (spaced repetition) ----------
+  const startReview = async () => {
+    setError(null);
+    setLoadingReview(true);
+    try {
+      const cards = await fetchDueReviewCards(SESSION_SIZE + 5);
+      if (cards.length === 0) {
+        setDueCount(0);
+        return;
+      }
+      setReviewCards(cards);
+      setMode('review');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load your review. Try again.');
+    } finally {
+      setLoadingReview(false);
+    }
+  };
+
+  if (mode === 'review') {
+    return (
+      <ThemedView style={styles.container}>
+        <SafeAreaView edges={['top']} style={styles.flex}>
+          <ReviewSession cards={reviewCards} onExit={backToOverview} />
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
+  if (mode === 'produce') {
+    return (
+      <ThemedView style={styles.container}>
+        <SafeAreaView edges={['top']} style={styles.flex}>
+          <ProductionPractice onExit={backToOverview} />
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
+  // ---------- PRACTICE SETS ----------
   const counts = {
     total: items.length,
     mastered: items.filter((i) => i.status === 'mastered').length,
@@ -63,12 +126,9 @@ export default function LearnScreen() {
 
   const startSession = () => {
     const pool = items.filter((i) => i.status !== 'mastered');
-    // Group by the pattern each card reinforces so a cluster's variations stay
-    // together. You practice the same rule across contexts back-to-back, then
-    // shuffle which pattern comes first so sessions still feel fresh.
     const clusters = new Map<string, PracticeItem[]>();
     for (const item of pool) {
-      const key = item.based_on ?? item.id; // ungrouped cards are their own cluster
+      const key = item.based_on ?? item.id;
       const bucket = clusters.get(key);
       if (bucket) bucket.push(item);
       else clusters.set(key, [item]);
@@ -86,17 +146,12 @@ export default function LearnScreen() {
 
   const onGrade = (wasCorrect: boolean) => {
     const current = queue[index];
-    // Persist progress; local state is enough to drive the UI immediately.
     recordPracticeResult(current, wasCorrect).catch(() => {});
     if (wasCorrect) setCorrect((c) => c + 1);
-    if (index + 1 >= queue.length) {
-      setMode('summary');
-    } else {
-      setIndex((i) => i + 1);
-    }
+    if (index + 1 >= queue.length) setMode('summary');
+    else setIndex((i) => i + 1);
   };
 
-  // ---------- SESSION ----------
   if (mode === 'session') {
     const current = queue[index];
     return (
@@ -111,7 +166,6 @@ export default function LearnScreen() {
                 {index + 1} of {queue.length}
               </ThemedText>
             </View>
-
             {current.kind === 'flashcard' ? (
               <FlashcardView key={current.id} item={current} onGrade={onGrade} />
             ) : (
@@ -123,7 +177,6 @@ export default function LearnScreen() {
     );
   }
 
-  // ---------- SUMMARY ----------
   if (mode === 'summary') {
     return (
       <ThemedView style={styles.container}>
@@ -148,7 +201,7 @@ export default function LearnScreen() {
     );
   }
 
-  // ---------- OVERVIEW ----------
+  // ---------- OVERVIEW (hub) ----------
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView edges={['top']} style={styles.flex}>
@@ -156,25 +209,70 @@ export default function LearnScreen() {
           <ThemedText type="title" style={styles.title}>
             Learn
           </ThemedText>
-          <ThemedText style={{ color: theme.textSecondary }}>
-            Practice built from the mistakes you actually make, then the same lessons in new
-            everyday situations so they stick.
-          </ThemedText>
 
-          {/* Deck status */}
+          {error && <ThemedText style={{ color: theme.major }}>{error}</ThemedText>}
+
+          {/* Spaced repetition review */}
+          <View style={[styles.hero, { backgroundColor: theme.backgroundElement }]}>
+            <View style={styles.heroTop}>
+              <View style={{ flex: 1 }}>
+                <ThemedText style={styles.heroTitle}>Review</ThemedText>
+                <ThemedText style={{ color: theme.textSecondary }}>
+                  Revisit past mistakes right before you would forget them.
+                </ThemedText>
+              </View>
+              {dueCount > 0 ? (
+                <View style={[styles.badge, { backgroundColor: theme.tint }]}>
+                  <ThemedText style={styles.badgeText}>{dueCount}</ThemedText>
+                </View>
+              ) : null}
+            </View>
+            <Pressable
+              style={[
+                styles.primary,
+                { backgroundColor: dueCount > 0 ? theme.tint : theme.backgroundSelected },
+              ]}
+              disabled={dueCount === 0 || loadingReview}
+              onPress={startReview}>
+              {loadingReview ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <ThemedText style={styles.primaryText}>
+                  {dueCount > 0 ? `Start review (${dueCount} due today)` : 'Nothing due right now'}
+                </ThemedText>
+              )}
+            </Pressable>
+          </View>
+
+          {/* Production practice */}
+          <View style={[styles.hero, { backgroundColor: theme.backgroundElement }]}>
+            <ThemedText style={styles.heroTitle}>Production practice</ThemedText>
+            <ThemedText style={{ color: theme.textSecondary }}>
+              Get a real-life scenario and respond cold, speaking or typing, the way you would in the
+              moment.
+            </ThemedText>
+            <Pressable
+              style={[styles.primary, { backgroundColor: theme.tint }]}
+              onPress={() => setMode('produce')}>
+              <ThemedText style={styles.primaryText}>New scenario</ThemedText>
+            </Pressable>
+          </View>
+
+          {/* AI practice sets (clusters) */}
+          <ThemedText type="small" style={{ color: theme.textSecondary, textTransform: 'uppercase' }}>
+            Practice sets
+          </ThemedText>
           <View style={styles.statsRow}>
             <Stat label="Cards" value={counts.total} />
             <Stat label="To review" value={counts.toReview} />
             <Stat label="Mastered" value={counts.mastered} />
           </View>
 
-          {error && <ThemedText style={{ color: theme.major }}>{error}</ThemedText>}
-
           {counts.total === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: theme.backgroundElement }]}>
               <ThemedText style={{ fontSize: 16 }}>
-                No cards yet. Generate a practice set and I will turn your recent mistakes into
-                small clusters, each drilling one pattern across different everyday situations.
+                No cards yet. Generate a practice set and I will turn your recent mistakes into small
+                clusters, each drilling one pattern across different everyday situations.
               </ThemedText>
             </View>
           ) : (
@@ -186,7 +284,9 @@ export default function LearnScreen() {
               disabled={counts.toReview === 0}
               onPress={startSession}>
               <ThemedText style={styles.primaryText}>
-                {counts.toReview ? `Start practice (${Math.min(counts.toReview, SESSION_SIZE)})` : 'All caught up'}
+                {counts.toReview
+                  ? `Start practice (${Math.min(counts.toReview, SESSION_SIZE)})`
+                  : 'All caught up'}
               </ThemedText>
             </Pressable>
           )}
@@ -239,6 +339,18 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   title: { fontSize: 40, lineHeight: 44 },
+  hero: { borderRadius: Spacing.four, padding: Spacing.four, gap: Spacing.three },
+  heroTop: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.three },
+  heroTitle: { fontSize: 22, fontWeight: '700', lineHeight: 28 },
+  badge: {
+    minWidth: 36,
+    height: 36,
+    borderRadius: 18,
+    paddingHorizontal: Spacing.two,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { color: '#fff', fontWeight: '800', fontSize: 16 },
   statsRow: { flexDirection: 'row', gap: Spacing.two },
   statCard: { flex: 1, borderRadius: Spacing.three, padding: Spacing.three, gap: Spacing.one },
   statValue: { fontSize: 28, fontWeight: '700' },
