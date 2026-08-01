@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { ClearableInput } from '@/components/clearable-input';
 import { MicButton } from '@/components/mic-button';
 import { ResultView } from '@/components/result-view';
 import { ThemedText } from '@/components/themed-text';
@@ -88,7 +89,7 @@ export function ProductionPractice({ onExit }: { onExit: () => void }) {
                 onError={setError}
                 disabled={busy}
               />
-              <TextInput
+              <ClearableInput
                 style={[
                   styles.input,
                   { backgroundColor: theme.backgroundElement, color: theme.text, borderColor: theme.border },
@@ -99,6 +100,7 @@ export function ProductionPractice({ onExit }: { onExit: () => void }) {
                 value={text}
                 onChangeText={setText}
                 editable={!busy}
+                onClear={() => setText('')}
               />
               {error && <ThemedText style={{ color: theme.major }}>{error}</ThemedText>}
               <View style={styles.actions}>

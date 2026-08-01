@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { ClearableInput } from '@/components/clearable-input';
 import { CategoryChip } from '@/components/flashcard-view';
 import { MicButton } from '@/components/mic-button';
 import { ThemedText } from '@/components/themed-text';
@@ -130,7 +131,7 @@ export function ReviewSession({
             onError={setError}
             disabled={grading}
           />
-          <TextInput
+          <ClearableInput
             style={[
               styles.input,
               { backgroundColor: theme.backgroundElement, color: theme.text, borderColor: theme.border },
@@ -141,6 +142,7 @@ export function ReviewSession({
             value={answer}
             onChangeText={setAnswer}
             editable={!grading}
+            onClear={() => setAnswer('')}
           />
           {error && <ThemedText style={{ color: theme.major }}>{error}</ThemedText>}
           <Pressable

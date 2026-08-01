@@ -6,11 +6,11 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ClearableInput } from '@/components/clearable-input';
 import { MicButton } from '@/components/mic-button';
 import { PhraseResultView } from '@/components/phrase-result-view';
 import { ResultView } from '@/components/result-view';
@@ -109,7 +109,7 @@ export default function CoachScreen() {
               disabled={busy}
             />
 
-            <TextInput
+            <ClearableInput
               style={[
                 styles.input,
                 {
@@ -124,6 +124,7 @@ export default function CoachScreen() {
               value={text}
               onChangeText={setText}
               editable={!busy}
+              onClear={() => setText('')}
             />
 
             {error && <ThemedText style={{ color: theme.major }}>{error}</ThemedText>}
